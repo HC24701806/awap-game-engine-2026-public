@@ -35,6 +35,13 @@ class BotPlayer:
             self._turn_id = turn
             self._moved_bots = set()
 
+    def _get_map_dims(self, controller: RobotController, map_team: Team) -> Tuple[int, int]:
+        if map_team == controller.get_team():
+            m = controller.get_map()
+            self.map_width = m.width
+            self.map_height = m.height
+        return self.map_width, self.map_height
+
     # ----------------------------
     # Map helpers
     # ----------------------------
@@ -46,8 +53,9 @@ class BotPlayer:
             return
 
         positions: Dict[str, List[Tuple[int, int]]] = defaultdict(list)
-        for x in range(self.map_width):
-            for y in range(self.map_height):
+        w, h = self._get_map_dims(controller, map_team)
+        for x in range(w):
+            for y in range(h):
                 tile = controller.get_tile(map_team, x, y)
                 if tile is None:
                     continue
@@ -111,6 +119,7 @@ class BotPlayer:
             blocked = set()
         queue = deque([start])
         came_from = {start: None}
+        w, h = self._get_map_dims(controller, map_team)
 
         while queue:
             cx, cy = queue.popleft()
@@ -123,7 +132,7 @@ class BotPlayer:
                     continue
                 if (nx, ny) in blocked:
                     continue
-                if not (0 <= nx < self.map_width and 0 <= ny < self.map_height):
+                if not (0 <= nx < w and 0 <= ny < h):
                     continue
                 tile = controller.get_tile(map_team, nx, ny)
                 if tile is None or not tile.is_walkable:
