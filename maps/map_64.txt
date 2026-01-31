@@ -1,0 +1,53 @@
+############
+#......#...#
+#.##.......#
+#..K.#.CB..#
+#....#..$..#
+#.##...#..##
+#...#......#
+#B..##..#..#
+#..........#
+#....K...#.#
+###......#.#
+#..b.#....##
+#...##.....#
+#..#......C#
+#...C#.....#
+#...T.#....#
+#K.S...C...#
+##...#.....#
+#....#.....#
+#..#.C...###
+##..T..K.#.#
+##..#...##.#
+#..U#C.....#
+#.KS...#####
+###Kb..#K..#
+#....#..K#.#
+##S........#
+############
+
+SWITCH: turn=250 duration=100
+
+ORDERS:
+start=0	duration=1	required=EGG,ONIONS,NOODLES,MEAT	reward=92000	penalty=1700
+start=24	duration=193	required=ONIONS	reward=67000	penalty=0
+start=40	duration=105	required=NOODLES,ONIONS,EGG	reward=26000	penalty=7700
+start=56	duration=253	required=EGG,MEAT,NOODLES,ONIONS	reward=100000	penalty=6600
+start=75	duration=65	required=EGG	reward=97000	penalty=7100
+start=108	duration=79	required=EGG,ONIONS,NOODLES	reward=49000	penalty=8600
+start=110	duration=88	required=ONIONS,SAUCE,NOODLES,EGG	reward=37000	penalty=4900
+start=128	duration=169	required=EGG,NOODLES,ONIONS	reward=27000	penalty=3500
+start=141	duration=188	required=MEAT,EGG	reward=78000	penalty=2800
+start=165	duration=0	required=SAUCE,ONIONS,MEAT,NOODLES	reward=90000	penalty=1800
+start=173	duration=120	required=NOODLES,EGG,MEAT	reward=4000	penalty=2900
+start=182	duration=61	required=NOODLES	reward=68000	penalty=6600
+start=211	duration=55	required=SAUCE,NOODLES,MEAT	reward=8000	penalty=8600
+start=216	duration=177	required=NOODLES,SAUCE,MEAT,EGG	reward=54000	penalty=400
+start=217	duration=248	required=SAUCE,NOODLES	reward=31000	penalty=2400
+start=223	duration=23	required=NOODLES,MEAT,SAUCE,ONIONS,EGG	reward=23000	penalty=3300
+start=225	duration=117	required=MEAT,NOODLES,SAUCE,ONIONS,EGG	reward=21000	penalty=9300
+start=262	duration=163	required=MEAT,EGG,NOODLES,SAUCE	reward=38000	penalty=7000
+start=267	duration=108	required=NOODLES,ONIONS	reward=26000	penalty=4500
+start=274	duration=259	required=ONIONS,EGG,NOODLES,MEAT	reward=5000	penalty=7100
+start=301	duration=239	required=ONIONS,MEAT,NOODLES,EGG,SAUCE	reward=10000	penalty=4900

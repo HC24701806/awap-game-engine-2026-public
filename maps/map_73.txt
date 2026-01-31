@@ -1,0 +1,41 @@
+########################################
+#.........#..####S....##...#....C#..bS.#
+#.......C....##....CC..#...............#
+##..#..#.T.....##..........S#...#......#
+##..S..#...........#$.#C.......#...#.K.#
+#...........###..#...#................##
+#.#....#B....##.#.........S.S.#K#......#
+#..##.K...#.....S#...##.#........S..B.##
+#....#..#.#.#.............#.##.S.#.....#
+#...R#....S.S.#.#..#.#..#...K.....#.##.#
+#...K....####.C.#..K...##...........#K.#
+#............#.#C..#.#.#.......#......C#
+#..#.....#.#....#.#...#UK#....##.......#
+#..K.............#.........C..#KC#T..#.#
+#.............K.#....#.##...#....#.S...#
+#..#..........###.........#.##...#..#S.#
+#...#............#.Sb.S.....##.#.#..#..#
+#..#.....#..............KT....#........#
+#..#.#...#..#.....S.#..C##....##...#.###
+########################################
+
+SWITCH: turn=250 duration=100
+
+ORDERS:
+start=10	duration=33	required=NOODLES,ONIONS	reward=95000	penalty=8200
+start=41	duration=40	required=NOODLES,MEAT,EGG	reward=60000	penalty=5700
+start=54	duration=39	required=ONIONS,EGG	reward=17000	penalty=3200
+start=148	duration=4	required=SAUCE	reward=35000	penalty=1000
+start=165	duration=15	required=MEAT,SAUCE	reward=93000	penalty=800
+start=178	duration=35	required=EGG,MEAT	reward=94000	penalty=4800
+start=299	duration=62	required=ONIONS,MEAT,NOODLES,SAUCE,EGG	reward=92000	penalty=5900
+start=306	duration=52	required=ONIONS,EGG,NOODLES,MEAT,SAUCE	reward=97000	penalty=8500
+start=329	duration=66	required=NOODLES,MEAT	reward=13000	penalty=1500
+start=336	duration=26	required=SAUCE,EGG,ONIONS	reward=9000	penalty=9200
+start=349	duration=24	required=ONIONS,MEAT	reward=42000	penalty=5900
+start=399	duration=39	required=ONIONS,MEAT,SAUCE,EGG,NOODLES	reward=88000	penalty=6700
+start=412	duration=2	required=EGG	reward=43000	penalty=1900
+start=419	duration=46	required=EGG	reward=97000	penalty=9500
+start=512	duration=25	required=EGG,NOODLES,SAUCE	reward=63000	penalty=2400
+start=573	duration=8	required=SAUCE,NOODLES,EGG,MEAT	reward=0	penalty=3200
+start=652	duration=53	required=NOODLES	reward=10000	penalty=8800

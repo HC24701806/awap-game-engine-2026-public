@@ -1,0 +1,69 @@
+#############
+#.....B#.K..#
+##.#.#b.....#
+#...........#
+#....#.#.B..#
+#.#.#.......#
+#..S.....##.#
+##.#..CK.#..#
+#.#.S.....KC#
+#.C....C...T#
+#.#..#..##..#
+#...C#..#$S.#
+#.###K#.....#
+#.......b...#
+#..#...#U..##
+#############
+
+SWITCH: turn=250 duration=100
+
+ORDERS:
+start=8	duration=125	required=NOODLES	reward=64000	penalty=2700
+start=19	duration=119	required=EGG,SAUCE	reward=9000	penalty=9200
+start=20	duration=160	required=NOODLES,SAUCE,MEAT,ONIONS	reward=39000	penalty=700
+start=22	duration=14	required=MEAT	reward=66000	penalty=600
+start=25	duration=43	required=MEAT	reward=2000	penalty=3500
+start=26	duration=152	required=MEAT,NOODLES	reward=37000	penalty=4500
+start=44	duration=106	required=SAUCE,MEAT,ONIONS	reward=71000	penalty=200
+start=51	duration=47	required=NOODLES	reward=1000	penalty=400
+start=52	duration=135	required=NOODLES,EGG,MEAT,ONIONS,SAUCE	reward=70000	penalty=700
+start=58	duration=42	required=EGG,ONIONS,SAUCE,MEAT,NOODLES	reward=68000	penalty=4200
+start=59	duration=109	required=ONIONS,MEAT,NOODLES,SAUCE,EGG	reward=15000	penalty=6000
+start=74	duration=131	required=ONIONS,EGG	reward=80000	penalty=600
+start=79	duration=44	required=NOODLES,EGG,ONIONS,SAUCE	reward=42000	penalty=9600
+start=81	duration=127	required=MEAT,EGG,ONIONS,SAUCE,NOODLES	reward=4000	penalty=3500
+start=93	duration=68	required=MEAT,EGG,NOODLES	reward=44000	penalty=300
+start=100	duration=0	required=EGG,NOODLES,SAUCE,MEAT,ONIONS	reward=64000	penalty=7500
+start=102	duration=57	required=SAUCE,MEAT	reward=59000	penalty=1700
+start=103	duration=168	required=EGG,ONIONS,NOODLES,SAUCE	reward=80000	penalty=4700
+start=117	duration=46	required=EGG	reward=90000	penalty=6500
+start=120	duration=81	required=MEAT,NOODLES,EGG,ONIONS	reward=30000	penalty=1500
+start=128	duration=70	required=MEAT,NOODLES,ONIONS	reward=100000	penalty=9600
+start=132	duration=48	required=MEAT,SAUCE,ONIONS	reward=34000	penalty=2800
+start=133	duration=19	required=EGG	reward=21000	penalty=900
+start=136	duration=82	required=EGG,NOODLES,SAUCE	reward=47000	penalty=7600
+start=143	duration=176	required=SAUCE,EGG,NOODLES	reward=93000	penalty=5900
+start=144	duration=153	required=ONIONS,SAUCE	reward=87000	penalty=1400
+start=162	duration=108	required=NOODLES,MEAT,ONIONS,EGG,SAUCE	reward=22000	penalty=2900
+start=164	duration=113	required=ONIONS,EGG	reward=24000	penalty=2600
+start=178	duration=27	required=EGG,MEAT	reward=37000	penalty=800
+start=182	duration=5	required=NOODLES	reward=95000	penalty=900
+start=184	duration=105	required=ONIONS,MEAT	reward=9000	penalty=1700
+start=207	duration=35	required=MEAT,EGG,ONIONS,NOODLES	reward=74000	penalty=7800
+start=213	duration=81	required=ONIONS,EGG	reward=7000	penalty=900
+start=220	duration=84	required=NOODLES,MEAT	reward=14000	penalty=4000
+start=221	duration=35	required=EGG,NOODLES,MEAT,SAUCE	reward=88000	penalty=3200
+start=222	duration=137	required=NOODLES,ONIONS	reward=52000	penalty=6300
+start=225	duration=180	required=EGG,ONIONS,MEAT	reward=64000	penalty=5800
+start=238	duration=19	required=ONIONS,MEAT,EGG,NOODLES	reward=96000	penalty=6500
+start=240	duration=53	required=NOODLES,SAUCE,MEAT,ONIONS	reward=15000	penalty=9500
+start=243	duration=48	required=ONIONS,SAUCE,NOODLES,MEAT,EGG	reward=3000	penalty=4500
+start=245	duration=49	required=SAUCE,MEAT,EGG	reward=44000	penalty=2400
+start=249	duration=98	required=MEAT,ONIONS,SAUCE,EGG,NOODLES	reward=73000	penalty=9800
+start=253	duration=56	required=EGG,NOODLES,ONIONS,MEAT	reward=65000	penalty=1500
+start=258	duration=35	required=NOODLES,EGG,SAUCE,MEAT,ONIONS	reward=45000	penalty=3900
+start=271	duration=155	required=SAUCE,ONIONS,NOODLES,MEAT,EGG	reward=22000	penalty=9400
+start=272	duration=14	required=NOODLES,ONIONS,SAUCE,EGG	reward=97000	penalty=9700
+start=278	duration=158	required=EGG,SAUCE	reward=47000	penalty=8500
+start=286	duration=34	required=EGG,MEAT,ONIONS,NOODLES	reward=33000	penalty=6700
+start=288	duration=178	required=MEAT,SAUCE	reward=32000	penalty=2800
