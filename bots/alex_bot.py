@@ -7,6 +7,7 @@ from item import Pan, Plate, Food
 from tiles import Box
 
 FOOD_BY_NAME = {ft.food_name: ft for ft in FoodType}
+FOOD_BY_ID = {ft.food_id: ft for ft in FoodType}
 
 DIRECTIONS = [
     (-1, -1), (-1, 0), (-1, 1),
@@ -203,6 +204,10 @@ class BotPlayer:
         if not active:
             return None
 
+        map_team = controller.get_team()
+        plate_obj = self._plate_at_counter_or_bot(controller, map_team)
+        plate_has_food = bool(self._plate_food_dicts(plate_obj))
+
         def ready_counts(map_team: Team) -> Dict[int, int]:
             counts: Dict[int, int] = defaultdict(int)
             plate = self._plate_at_counter_or_bot(controller, map_team)
@@ -232,7 +237,6 @@ class BotPlayer:
             return counts
 
         def estimate_time(o: Dict) -> float:
-            map_team = controller.get_team()
             req = self._required_food_types(o)
             counts = ready_counts(map_team)
             missing: List[FoodType] = []
@@ -261,6 +265,7 @@ class BotPlayer:
 
         def score(o: Dict) -> float:
             time_left = max(1, o["expires_turn"] - turn)
+            req = self._required_food_types(o)
             est = estimate_time(o)
             feasible = est <= (time_left - 2)
 
@@ -276,6 +281,15 @@ class BotPlayer:
             base = value / max(1.0, est)
             if not feasible:
                 base *= 0.1
+
+            if plate_has_food:
+                if self._plate_exact_match(plate_obj, req):
+                    base += 5000
+                elif self._plate_subset_of_order(plate_obj, req):
+                    base += 2000
+                else:
+                    base -= 2000
+
             return base + claim_bonus
 
         return max(active, key=score)
@@ -326,6 +340,37 @@ class BotPlayer:
         if isinstance(plate, dict):
             return plate.get("food", [])
         return []
+
+    def _order_signature(self, required: List[FoodType]) -> List[Tuple[int, bool, int]]:
+        sig = [(ft.food_id, ft.can_chop, 1 if ft.can_cook else 0) for ft in required]
+        sig.sort()
+        return sig
+
+    def _plate_signature(self, plate) -> List[Tuple[int, bool, int]]:
+        sig = []
+        for f in self._plate_food_dicts(plate):
+            sig.append((f.get("food_id"), f.get("chopped", False), f.get("cooked_stage", 0)))
+        sig.sort()
+        return sig
+
+    def _sig_counts(self, sig: List[Tuple[int, bool, int]]) -> Dict[Tuple[int, bool, int], int]:
+        counts: Dict[Tuple[int, bool, int], int] = defaultdict(int)
+        for t in sig:
+            counts[t] += 1
+        return counts
+
+    def _plate_subset_of_order(self, plate, required: List[FoodType]) -> bool:
+        plate_sig = self._plate_signature(plate)
+        order_sig = self._order_signature(required)
+        plate_counts = self._sig_counts(plate_sig)
+        order_counts = self._sig_counts(order_sig)
+        for k, v in plate_counts.items():
+            if order_counts.get(k, 0) < v:
+                return False
+        return True
+
+    def _plate_exact_match(self, plate, required: List[FoodType]) -> bool:
+        return self._plate_signature(plate) == self._order_signature(required)
 
     def _missing_for_plate(self, required: List[FoodType], plate) -> List[FoodType]:
         remaining = list(required)
@@ -504,7 +549,9 @@ class BotPlayer:
 
         self.bot_roles = {}
         for i, bid in enumerate(sorted(bot_ids)):
-            if i == 0:
+            if len(bot_ids) == 1:
+                self.bot_roles[bid] = "solo"
+            elif i == 0:
                 self.bot_roles[bid] = "cook"
             elif i == 1:
                 self.bot_roles[bid] = "plate"
@@ -614,7 +661,9 @@ class BotPlayer:
 
         for bid in bot_ids:
             role = self.bot_roles.get(bid, "support")
-            if role == "cook":
+            if role == "solo":
+                self._play_solo(controller, bid, map_team, required)
+            elif role == "cook":
                 self._play_cook(controller, bid, map_team, required)
             elif role == "plate":
                 self._play_plate(controller, bid, map_team, required)
@@ -846,12 +895,13 @@ class BotPlayer:
                     controller.buy(bot_id, ft, shop_pos[0], shop_pos[1])
             return
 
+        has_plate_bot = any(role == "plate" for role in self.bot_roles.values())
         missing_simple = [ft for ft in missing if not ft.can_cook and not ft.can_chop]
         for ft in list(missing_simple):
             if self._find_ready_food_on_counters(controller, map_team, ft) is not None:
                 missing_simple.remove(ft)
 
-        if missing_simple:
+        if missing_simple and (not has_plate_bot or single_counter):
             ft = missing_simple[0]
             box_pos = self._find_box_with_food(controller, map_team, ft, ws.get("plate_counter"))
             if box_pos and self._move_towards(controller, bot_id, map_team, box_pos):
@@ -895,9 +945,34 @@ class BotPlayer:
                     ws["plate_counter"] = new_counter
                     plate_counter = new_counter
 
-        # ensure we have a plate (in hand or on counter); on single-counter maps keep plate in hand
         prep_counter_ref = ws.get("prep_counter")
         single_counter = prep_counter_ref and plate_counter and prep_counter_ref == plate_counter
+
+        # if holding a plate, try submit when complete or add food from counters
+        if holding and holding.get("type") == "Plate":
+            missing = self._missing_for_plate(required, holding)
+            if not missing and submit_pos:
+                if self._move_towards(controller, bot_id, map_team, submit_pos):
+                    controller.submit(bot_id, submit_pos[0], submit_pos[1])
+                return
+            if missing and not holding.get("dirty"):
+                for ft in missing:
+                    pos = self._find_ready_food_on_counters(controller, map_team, ft)
+                    if pos and self._move_towards(controller, bot_id, map_team, pos):
+                        controller.add_food_to_plate(bot_id, pos[0], pos[1])
+                        return
+            if not single_counter:
+                empty_counter = self._find_empty_counter_near(controller, map_team, ws.get("submit")) or plate_counter
+                if empty_counter:
+                    tile = controller.get_tile(map_team, empty_counter[0], empty_counter[1])
+                    if tile is not None and getattr(tile, "item", None) is None:
+                        if self._move_towards(controller, bot_id, map_team, empty_counter):
+                            controller.place(bot_id, empty_counter[0], empty_counter[1])
+                            if empty_counter != plate_counter:
+                                ws["plate_counter"] = empty_counter
+            return
+
+        # ensure we have a plate (in hand or on counter); on single-counter maps keep plate in hand
         if plate_counter:
             tile = controller.get_tile(map_team, plate_counter[0], plate_counter[1])
             tile_item = getattr(tile, "item", None) if tile else None
@@ -934,35 +1009,6 @@ class BotPlayer:
                         shop_simple.append(ft)
             if shop_simple and self._shop_for_items(controller, bot_id, map_team, shop_simple):
                 return
-
-        # if holding a plate, try submit when complete or add food from counters
-        if holding and holding.get("type") == "Plate":
-            missing = self._missing_for_plate(required, holding)
-            if not missing and submit_pos:
-                # Move towards submit (returns True when adjacent or on it)
-                # Can submit from adjacent tiles (Chebyshev distance <= 1)
-                if self._move_towards(controller, bot_id, map_team, submit_pos):
-                    controller.submit(bot_id, submit_pos[0], submit_pos[1])
-                return
-            # add food from counters (plate in hand) — works when only one counter
-            if missing and not holding.get("dirty"):
-                for ft in missing:
-                    pos = self._find_ready_food_on_counters(controller, map_team, ft)
-                    if pos and self._move_towards(controller, bot_id, map_team, pos):
-                        controller.add_food_to_plate(bot_id, pos[0], pos[1])
-                        return
-            # put plate back on counter only when counter is empty (for multi-counter maps)
-            # On single-counter maps, keep plate in hand so cook bot can use counter
-            if not single_counter:
-                empty_counter = self._find_empty_counter_near(controller, map_team, ws.get("submit")) or plate_counter
-                if empty_counter:
-                    tile = controller.get_tile(map_team, empty_counter[0], empty_counter[1])
-                    if tile is not None and getattr(tile, "item", None) is None:
-                        if self._move_towards(controller, bot_id, map_team, empty_counter):
-                            controller.place(bot_id, empty_counter[0], empty_counter[1])
-                            if empty_counter != plate_counter:
-                                ws["plate_counter"] = empty_counter
-            return
 
         # check plate on counter for completion (only if we're not already holding a plate)
         if not (holding and holding.get("type") == "Plate"):
@@ -1049,6 +1095,60 @@ class BotPlayer:
         # idle near plate counter
         if plate_counter:
             self._move_towards(controller, bot_id, map_team, plate_counter)
+
+    def _play_solo(self, controller: RobotController, bot_id: int, map_team: Team, required: List[FoodType]) -> None:
+        bot_state = controller.get_bot_state(bot_id)
+        if bot_state is None:
+            return
+        holding = bot_state.get("holding")
+
+        plate_obj = self._plate_at_counter_or_bot(controller, map_team)
+        missing = self._missing_for_plate(required, plate_obj)
+
+        ready = False
+        for ft in missing:
+            if self._find_ready_food_on_counters(controller, map_team, ft) is not None:
+                ready = True
+                break
+
+        ws = self.workstations.get(map_team, {})
+        cooker_pos = ws.get("cooker")
+        cooked_in_pan = False
+        if cooker_pos:
+            tile = controller.get_tile(map_team, cooker_pos[0], cooker_pos[1])
+            pan = getattr(tile, "item", None) if tile else None
+            if isinstance(pan, Pan) and isinstance(getattr(pan, "food", None), Food):
+                if pan.food.cooked_stage == 1:
+                    cooked_in_pan = True
+                    for ft in missing:
+                        if pan.food.food_id == ft.food_id:
+                            ready = True
+                            break
+
+        if plate_obj is not None and cooked_in_pan and holding is None:
+            self._play_cook(controller, bot_id, map_team, required)
+            return
+
+        if holding and holding.get("type") == "Plate":
+            self._play_plate(controller, bot_id, map_team, required)
+            return
+        if holding and holding.get("type") == "Food" and plate_obj is not None:
+            self._play_plate(controller, bot_id, map_team, required)
+            return
+
+        if plate_obj is not None:
+            if not ready and any(ft.can_cook or ft.can_chop for ft in missing):
+                self._play_cook(controller, bot_id, map_team, required)
+                return
+            if ready or len(missing) < len(required):
+                self._play_plate(controller, bot_id, map_team, required)
+                return
+
+        if plate_obj is None and ready:
+            self._play_plate(controller, bot_id, map_team, required)
+            return
+
+        self._play_cook(controller, bot_id, map_team, required)
 
     def _play_support(self, controller: RobotController, bot_id: int, map_team: Team, required: List[FoodType]) -> None:
         bot_state = controller.get_bot_state(bot_id)
