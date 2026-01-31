@@ -45,7 +45,7 @@ class RobotController:
     # ----------------------------
     def __refresh_turn_budgets(self) -> None:
         '''can only move once AND act once per turn'''
-        for bot_id in self.get_team_bot_ids():
+        for bot_id in self.get_team_bot_ids(self.__team):
             self.__moves_left[bot_id] = 1
             self.__actions_left[bot_id] = 1
 
@@ -90,14 +90,14 @@ class RobotController:
     def get_enemy_team(self) -> Team:
         return Team.RED if self.__team == Team.BLUE else Team.BLUE
 
-    def get_map(self) -> Map:
+    def get_map(self, team: Team) -> Map:
         '''Deep copy for the user'''
-        return copy.deepcopy(self.__game_state.get_map(self.__team))
+        return copy.deepcopy(self.__game_state.get_map(team))
 
-    def get_orders(self) -> List[Dict[str, Any]]:
+    def get_orders(self, team: Team) -> List[Dict[str, Any]]:
         '''returns list of dictionaries (each order is represented by the dictionary)'''
         res = []
-        for o in self.__game_state.orders.get(self.__team, []):
+        for o in self.__game_state.orders.get(team, []):
             res.append(
                 {
                     "order_id": o.order_id,
@@ -113,13 +113,13 @@ class RobotController:
             )
         return res
 
-    def get_team_bot_ids(self) -> List[int]:
-        '''returns bot ids of team as a list'''
-        return [bot_id for bot_id, b in self.__game_state.bots.items() if b.team == self.__team]
+    def get_team_bot_ids(self, team: Team) -> List[int]:
+        '''returns bot ids of a specified team as a list'''
+        return [bot_id for bot_id, b in self.__game_state.bots.items() if b.team == team]
 
-    def get_team_money(self) -> int:
-        '''returns money for current team'''
-        return self.__game_state.get_team_money(self.__team)
+    def get_team_money(self, team: Team) -> int:
+        '''returns money for a team (yours and your opponent's)'''
+        return self.__game_state.get_team_money(team)
 
     def get_bot_state(self, bot_id: int) -> Optional[Dict[str, Any]]:
         '''returns a dictionary of bot state as a dictionary; note holding provides a dictionary too'''
