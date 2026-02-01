@@ -96,16 +96,16 @@ class FrozenMeta(type):
     raise AttributeError(f"Cannot edit constants '{name}' in GameConstants")
 
 class GameConstants(metaclass = FrozenMeta):
-  TOTAL_TURNS = 250 #this is default without engine specification
+  TOTAL_TURNS = 500 #this is default without engine specification
 
   MONEY_PER_TURN = 1
 
   #time it takes to cook and burn; [0, 20) uncooked, [20, 40) cooked, [40,..) burnt
-  COOK_PROGRESS = 10
-  BURN_PROGRESS = 20
+  COOK_PROGRESS = 20
+  BURN_PROGRESS =40
 
   PLATE_WASH_PROGRESS = 2
 
   #WARNING: this should be specified in the map, but if not, default are these:
-  MIDGAME_SWITCH_TURN = 100
+  MIDGAME_SWITCH_TURN = 250
   MIDGAME_SWITCH_DURATION = 100
