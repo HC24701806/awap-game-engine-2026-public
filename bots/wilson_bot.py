@@ -1,9 +1,7 @@
 from collections import deque, defaultdict
 from typing import Tuple, Optional, List, Dict
-import json
-import os
 
-from game_constants import Team, FoodType, ShopCosts, GameConstants
+from game_constants import Team, FoodType, ShopCosts
 from robot_controller import RobotController
 from item import Pan, Plate, Food
 from tiles import Box
@@ -16,18 +14,6 @@ DIRECTIONS = [
     (0, -1),           (0, 1),
     (1, -1),  (1, 0),  (1, 1),
 ]
-
-DEFAULT_TUNING = {
-    "claim_bonus_none": 1000,
-    "claim_bonus_ours": 500,
-    "plate_exact_bonus": 5000,
-    "plate_subset_bonus": 2000,
-    "plate_mismatch_penalty": 2000,
-    "infeasible_multiplier": 0.1,
-    "value_penalty_weight": 0.5,
-    "shop_overhead": 6,
-    "travel_weight": 1.0,
-}
 
 
 class BotPlayer:
@@ -43,23 +29,7 @@ class BotPlayer:
         self.has_switched = False
         self._turn_id: Optional[int] = None
         self._moved_bots: set = set()
-        self.disable_sabotage = False
-        self.enable_switch = True
-        self.tuning = self._load_tuning()
-
-    def _load_tuning(self) -> Dict[str, float]:
-        tuning = dict(DEFAULT_TUNING)
-        base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-        path = os.path.join(base_dir, "tools", "wilson_tuning.json")
-        if os.path.exists(path):
-            try:
-                with open(path, "r") as f:
-                    data = json.load(f)
-                if isinstance(data, dict):
-                    tuning.update(data)
-            except Exception:
-                pass
-        return tuning
+        self.disable_sabotage = True
 
     def _reset_turn_state(self, turn: int) -> None:
         if self._turn_id != turn:
@@ -67,9 +37,10 @@ class BotPlayer:
             self._moved_bots = set()
 
     def _get_map_dims(self, controller: RobotController, map_team: Team) -> Tuple[int, int]:
-        m = controller.get_map(map_team)
-        self.map_width = m.width
-        self.map_height = m.height
+        if map_team == controller.get_team():
+            m = controller.get_map(map_team)
+            self.map_width = m.width
+            self.map_height = m.height
         return self.map_width, self.map_height
 
     # ----------------------------
@@ -184,8 +155,13 @@ class BotPlayer:
             return None
         return (curr[0] - start[0], curr[1] - start[1])
 
-    def _bfs_distance(self, controller: RobotController, map_team: Team, start: Tuple[int, int], goal: Tuple[int, int]) -> Optional[int]:
-        """Return shortest steps from start to goal using walkable tiles, or None if unreachable."""
+    def _bfs_distance(
+        self,
+        controller: RobotController,
+        map_team: Team,
+        start: Tuple[int, int],
+        goal: Tuple[int, int],
+    ) -> Optional[int]:
         if start == goal:
             return 0
         queue = deque([(start[0], start[1], 0)])
@@ -207,6 +183,44 @@ class BotPlayer:
                 seen.add((nx, ny))
                 queue.append((nx, ny, dist + 1))
         return None
+
+    def _bfs_distance_to_adjacent(
+        self,
+        controller: RobotController,
+        map_team: Team,
+        start: Tuple[int, int],
+        target: Tuple[int, int],
+    ) -> Optional[int]:
+        best = None
+        for dx, dy in DIRECTIONS:
+            nx, ny = target[0] + dx, target[1] + dy
+            d = self._bfs_distance(controller, map_team, start, (nx, ny))
+            if d is None:
+                continue
+            if best is None or d < best:
+                best = d
+        return best
+
+    def _is_reachable_adjacent(
+        self,
+        controller: RobotController,
+        map_team: Team,
+        origin: Tuple[int, int],
+        target: Optional[Tuple[int, int]],
+    ) -> bool:
+        if target is None:
+            return False
+        return self._bfs_distance_to_adjacent(controller, map_team, origin, target) is not None
+
+    def _reachable_counters(self, controller: RobotController, map_team: Team, origin: Tuple[int, int]) -> List[Tuple[int, int]]:
+        counters = self.tile_cache.get(map_team, {}).get("COUNTER", [])
+        if not counters:
+            return []
+        reachable = []
+        for pos in counters:
+            if self._bfs_distance_to_adjacent(controller, map_team, origin, pos) is not None:
+                reachable.append(pos)
+        return reachable
 
     def _move_towards(self, controller: RobotController, bot_id: int, map_team: Team, target: Tuple[int, int]) -> bool:
         """Move one step toward target. Returns True if bot is now adjacent (can act on target this turn)."""
@@ -241,6 +255,28 @@ class BotPlayer:
             after = controller.get_bot_state(bot_id)
             if after and self._chebyshev((after["x"], after["y"]), target) <= 1:
                 return True
+            return False
+
+        # Fallback: try any adjacent step that reduces distance (handles tight walls)
+        best = None
+        best_dist = self._chebyshev((bx, by), target)
+        for dx, dy in DIRECTIONS:
+            if not controller.can_move(bot_id, dx, dy):
+                continue
+            nx, ny = bx + dx, by + dy
+            tile = controller.get_tile(map_team, nx, ny)
+            if tile is None or not tile.is_walkable:
+                continue
+            dist = self._chebyshev((nx, ny), target)
+            if dist < best_dist:
+                best_dist = dist
+                best = (dx, dy)
+        if best is not None:
+            controller.move(bot_id, best[0], best[1])
+            self._moved_bots.add(bot_id)
+            after = controller.get_bot_state(bot_id)
+            if after and self._chebyshev((after["x"], after["y"]), target) <= 1:
+                return True
         return False
 
     # ----------------------------
@@ -253,20 +289,7 @@ class BotPlayer:
 
         turn = controller.get_turn()
         bot_ids = controller.get_team_bot_ids(controller.get_team())
-        def is_active_order(o: Dict) -> bool:
-            if "is_active" in o:
-                return bool(o.get("is_active"))
-            if o.get("completed_turn") is not None:
-                return False
-            created = o.get("created_turn")
-            expires = o.get("expires_turn")
-            if isinstance(created, int) and created > turn:
-                return False
-            if isinstance(expires, int) and expires < turn:
-                return False
-            return True
-
-        active = [o for o in orders if is_active_order(o)]
+        active = [o for o in orders if o.get("is_active")]
         if not active:
             return None
 
@@ -325,53 +348,9 @@ class BotPlayer:
                 if not self._box_has_food(controller, map_team, ft):
                     need_shop = True
                     break
-            shop_overhead = self.tuning.get("shop_overhead", 6) if need_shop else 0
+            shop_overhead = 6 if need_shop else 0
 
-            # Travel-time estimates using BFS distances between key workstations
-            ws = self.workstations.get(map_team, {})
-            prep = ws.get("prep_counter")
-            shop_pos = ws.get("shop")
-            submit = ws.get("submit")
-
-            def min_bot_dist_to(target: Optional[Tuple[int, int]]) -> Optional[int]:
-                if target is None:
-                    return None
-                best = None
-                for bid in controller.get_team_bot_ids(controller.get_team()):
-                    b = controller.get_bot_state(bid)
-                    if not b:
-                        continue
-                    start = (b["x"], b["y"])
-                    d = self._bfs_distance(controller, map_team, start, target)
-                    if d is None:
-                        d = self._chebyshev(start, target)
-                    if best is None or d < best:
-                        best = d
-                return best
-
-            travel_time = 0
-            bot_to_prep = min_bot_dist_to(prep)
-            if bot_to_prep is not None:
-                travel_time += bot_to_prep
-
-            if need_shop and shop_pos:
-                bot_to_shop = min_bot_dist_to(shop_pos)
-                if bot_to_shop is not None and prep is not None:
-                    shop_to_prep = self._bfs_distance(controller, map_team, shop_pos, prep)
-                    if shop_to_prep is None:
-                        shop_to_prep = self._chebyshev(shop_pos, prep)
-                    travel_time = min(travel_time, bot_to_shop + shop_to_prep) if travel_time else bot_to_shop + shop_to_prep
-
-            if prep and submit:
-                p_to_s = self._bfs_distance(controller, map_team, prep, submit)
-                if p_to_s is None:
-                    p_to_s = self._chebyshev(prep, submit)
-                travel_time += max(0, (p_to_s // 2))
-
-            travel_weight = self.tuning.get("travel_weight", 1.0)
-            travel_time *= travel_weight
-
-            return cook_time + chop_time + simple_time + shop_overhead + travel_time + 2
+            return cook_time + chop_time + simple_time + shop_overhead + 2
 
         def score(o: Dict) -> float:
             time_left = max(1, o["expires_turn"] - turn)
@@ -381,47 +360,28 @@ class BotPlayer:
 
             claimed_by = o.get("claimed_by")
             if claimed_by is None:
-                claim_bonus = self.tuning.get("claim_bonus_none", 1000)
+                claim_bonus = 1000
             elif claimed_by in bot_ids:
-                claim_bonus = self.tuning.get("claim_bonus_ours", 500)
+                claim_bonus = 500
             else:
                 claim_bonus = 0
 
-            value_penalty_weight = self.tuning.get("value_penalty_weight", 0.5)
-            value = o["reward"] + (value_penalty_weight * o["penalty"])
+            value = o["reward"] + (0.5 * o["penalty"])
             base = value / max(1.0, est)
             if not feasible:
-                base *= self.tuning.get("infeasible_multiplier", 0.1)
+                base *= 0.1
 
             if plate_has_food:
                 if self._plate_exact_match(plate_obj, req):
-                    base += self.tuning.get("plate_exact_bonus", 5000)
+                    base += 5000
                 elif self._plate_subset_of_order(plate_obj, req):
-                    base += self.tuning.get("plate_subset_bonus", 2000)
+                    base += 2000
                 else:
-                    base -= self.tuning.get("plate_mismatch_penalty", 2000)
+                    base -= 2000
 
             return base + claim_bonus
 
         return max(active, key=score)
-
-    def _select_enemy_order_for_sabotage(self, controller: RobotController, team: Team) -> Optional[Dict]:
-        orders = controller.get_orders(team)
-        if not orders:
-            return None
-        turn = controller.get_turn()
-        active = [o for o in orders if o.get("is_active")]
-        if not active:
-            return None
-
-        def sabotage_score(o: Dict) -> float:
-            time_left = max(1, o.get("expires_turn", turn) - turn)
-            req = self._required_food_types(o)
-            cook_weight = sum(1 for ft in req if ft.can_cook or ft.can_chop)
-            value = o.get("reward", 0) + o.get("penalty", 0)
-            return (value / time_left) + (cook_weight * 150)
-
-        return max(active, key=sabotage_score)
 
     def _required_food_types(self, order: Dict) -> List[FoodType]:
         req = []
@@ -552,7 +512,13 @@ class BotPlayer:
                 return True
         return False
 
-    def _find_empty_counter_near(self, controller: RobotController, map_team: Team, near: Optional[Tuple[int, int]]) -> Optional[Tuple[int, int]]:
+    def _find_empty_counter_near(
+        self,
+        controller: RobotController,
+        map_team: Team,
+        near: Optional[Tuple[int, int]],
+        origin: Optional[Tuple[int, int]] = None,
+    ) -> Optional[Tuple[int, int]]:
         counters = self.tile_cache[map_team].get("COUNTER", [])
         if not counters:
             return None
@@ -566,7 +532,12 @@ class BotPlayer:
                 continue
             if getattr(tile, "item", None) is not None:
                 continue
-            dist = self._chebyshev(pos, near)
+            if origin is not None:
+                dist = self._bfs_distance_to_adjacent(controller, map_team, origin, pos)
+                if dist is None:
+                    continue
+            else:
+                dist = self._chebyshev(pos, near)
             if dist < best_dist:
                 best_dist = dist
                 best = pos
@@ -699,113 +670,66 @@ class BotPlayer:
         ws = self.workstations.get(map_team, {})
         trash_pos = ws.get("trash")
 
-        counters = self.tile_cache.get(map_team, {}).get("COUNTER", [])
-        bot_pos = (bot_state.get("x"), bot_state.get("y"))
-
-        turn = controller.get_turn()
-        switch_start = GameConstants.MIDGAME_SWITCH_TURN
-        switch_end = GameConstants.MIDGAME_SWITCH_TURN + GameConstants.MIDGAME_SWITCH_DURATION
-        turns_left = max(0, switch_end - turn)
-
-        def dist(a: Tuple[int, int], b: Tuple[int, int]) -> int:
-            return self._chebyshev(a, b)
-
-        # If holding something, trash it first (or drop on counter to clutter)
+        # If holding something, trash it first
         if holding:
             if trash_pos and self._move_towards(controller, bot_id, map_team, trash_pos):
                 controller.trash(bot_id, trash_pos[0], trash_pos[1])
-                return
-            empty_counter = self._find_empty_counter_near(controller, map_team, ws.get("submit"))
-            if empty_counter and self._move_towards(controller, bot_id, map_team, empty_counter):
-                controller.place(bot_id, empty_counter[0], empty_counter[1])
             return
 
-        # Determine best target to sabotage based on time left in switch window
-        targets: List[Tuple[int, Tuple[int, int], str]] = []
-
-        # Plate with food on counters (highest value)
-        for pos in counters:
-            tile = controller.get_tile(map_team, pos[0], pos[1])
-            if tile is None:
-                continue
-            item = getattr(tile, "item", None)
-            if isinstance(item, Plate) and not item.dirty and item.food:
-                score = 1000 - dist(bot_pos, pos)
-                targets.append((score, pos, "plate_food"))
-
-        # Food in pan (prioritize interrupting cooking to toss it)
+        # Take cooked/ready food from pan and trash it
         cooker_pos = ws.get("cooker")
         if cooker_pos:
             tile = controller.get_tile(map_team, cooker_pos[0], cooker_pos[1])
             if tile is not None and isinstance(getattr(tile, "item", None), Pan):
                 pan = tile.item
                 if pan.food is not None:
-                    cooking = getattr(pan.food, "cooked_stage", 0) == 0
-                    # higher score if it's actively cooking (to deny progress)
-                    score = (900 if cooking else 700) - dist(bot_pos, cooker_pos)
-                    targets.append((score, cooker_pos, "pan_food"))
-                    if cooking:
-                        # hard-prioritize cooking pans so we can toss the food
-                        if self._move_towards(controller, bot_id, map_team, cooker_pos):
-                            controller.take_from_pan(bot_id, cooker_pos[0], cooker_pos[1])
-                        return
+                    if self._move_towards(controller, bot_id, map_team, cooker_pos):
+                        controller.take_from_pan(bot_id, cooker_pos[0], cooker_pos[1])
+                    return
 
-        # Clean plates from sink table
+        # Take food from counters and trash it
+        food_pos = self._find_any_food_on_counters(controller, map_team)
+        if food_pos:
+            if self._move_towards(controller, bot_id, map_team, food_pos):
+                controller.pickup(bot_id, food_pos[0], food_pos[1])
+            return
+
+        # Take clean plates from sink table and trash them (deprive enemy of plates)
         sinktable_pos = ws.get("sinktable")
         if sinktable_pos:
             tile = controller.get_tile(map_team, sinktable_pos[0], sinktable_pos[1])
             if tile is not None and getattr(tile, "num_clean_plates", 0) > 0:
-                score = 400 - dist(bot_pos, sinktable_pos)
-                targets.append((score, sinktable_pos, "clean_plate"))
+                if self._move_towards(controller, bot_id, map_team, sinktable_pos):
+                    controller.take_clean_plate(bot_id, sinktable_pos[0], sinktable_pos[1])
+                return
 
-        # Food from counters
-        food_pos = self._find_any_food_on_counters(controller, map_team)
-        if food_pos:
-            score = 500 - dist(bot_pos, food_pos)
-            targets.append((score, food_pos, "food_counter"))
+        # Take plate with food from counters and trash it (high priority - these are completed orders)
+        counters = self.tile_cache.get(map_team, {}).get("COUNTER", [])
+        for pos in counters:
+            tile = controller.get_tile(map_team, pos[0], pos[1])
+            if tile is None:
+                continue
+            item = getattr(tile, "item", None)
+            if isinstance(item, Plate) and not item.dirty and item.food:
+                if self._move_towards(controller, bot_id, map_team, pos):
+                    controller.pickup(bot_id, pos[0], pos[1])
+                return
 
-        # Raw ingredients from boxes
+        # Take raw ingredients from boxes to slow enemy production
         boxes = self.tile_cache.get(map_team, {}).get("BOX", [])
         for pos in boxes:
             tile = controller.get_tile(map_team, pos[0], pos[1])
             if tile is None or not isinstance(tile, Box):
                 continue
             if getattr(tile, "count", 0) > 0:
-                score = 200 - dist(bot_pos, pos)
-                targets.append((score, pos, "box"))
+                if self._move_towards(controller, bot_id, map_team, pos):
+                    controller.pickup(bot_id, pos[0], pos[1])
+                return
 
-        # If switch is about to end, prioritize blocking submit/cooker
+        # Otherwise move toward submit to obstruct enemy submissions
         submit_pos = ws.get("submit")
-        if turns_left <= 15 and submit_pos:
-            if self._move_towards(controller, bot_id, map_team, submit_pos):
-                return
-            return
-
-        if targets:
-            targets.sort(reverse=True, key=lambda t: t[0])
-            _, pos, kind = targets[0]
-            if kind == "plate_food":
-                if self._move_towards(controller, bot_id, map_team, pos):
-                    controller.pickup(bot_id, pos[0], pos[1])
-                return
-            if kind == "pan_food":
-                if self._move_towards(controller, bot_id, map_team, pos):
-                    controller.take_from_pan(bot_id, pos[0], pos[1])
-                return
-            if kind == "clean_plate":
-                if self._move_towards(controller, bot_id, map_team, pos):
-                    controller.take_clean_plate(bot_id, pos[0], pos[1])
-                return
-            if kind == "food_counter" or kind == "box":
-                if self._move_towards(controller, bot_id, map_team, pos):
-                    controller.pickup(bot_id, pos[0], pos[1])
-                return
-
-        # Otherwise move toward submit or cooker to obstruct enemy submissions
-        targets = [p for p in [submit_pos, cooker_pos] if p is not None]
-        if targets:
-            target = min(targets, key=lambda p: self._chebyshev(bot_pos, p))
-            self._move_towards(controller, bot_id, map_team, target)
+        if submit_pos:
+            self._move_towards(controller, bot_id, map_team, submit_pos)
 
     # ----------------------------
     # Main turn
@@ -818,54 +742,33 @@ class BotPlayer:
 
         self._assign_roles(bot_ids)
 
-        # Decide when to switch for sabotage (best of Ethan/Wilson)
-        if self.enable_switch and controller.can_switch_maps() and not self.has_switched:
-            if self._should_switch_for_sabotage(controller):
-                if controller.switch_maps():
-                    self.has_switched = True
-
         first_state = controller.get_bot_state(bot_ids[0])
         if first_state is None:
             return
-        home_team = controller.get_team()
-        home_map_team = Team[first_state["map_team"]]
-        self._ensure_tile_cache(controller, home_map_team)
+        map_team = Team[first_state["map_team"]]
+        self._ensure_tile_cache(controller, map_team)
 
         order = self._select_active_order(controller)
+        if not self.disable_sabotage and map_team != controller.get_team():
+            for bid in bot_ids:
+                self._play_sabotage(controller, bid, map_team)
+            return
 
         if order is None:
-            # still allow sabotage for any bot on enemy map
-            for bid in bot_ids:
-                bstate = controller.get_bot_state(bid)
-                if not bstate:
-                    continue
-                b_map_team = Team[bstate["map_team"]]
-                if not self.disable_sabotage and b_map_team != home_team:
-                    self._ensure_tile_cache(controller, b_map_team)
-                    self._play_sabotage(controller, bid, b_map_team)
             return
 
         required = self._required_food_types(order)
 
         for bid in bot_ids:
-            bstate = controller.get_bot_state(bid)
-            if not bstate:
-                continue
-            b_map_team = Team[bstate["map_team"]]
-            if not self.disable_sabotage and b_map_team != home_team:
-                self._ensure_tile_cache(controller, b_map_team)
-                self._play_sabotage(controller, bid, b_map_team)
-                continue
-
             role = self.bot_roles.get(bid, "support")
             if role == "solo":
-                self._play_solo(controller, bid, b_map_team, required)
+                self._play_solo(controller, bid, map_team, required)
             elif role == "cook":
-                self._play_cook(controller, bid, b_map_team, required)
+                self._play_cook(controller, bid, map_team, required)
             elif role == "plate":
-                self._play_plate(controller, bid, b_map_team, required)
+                self._play_plate(controller, bid, map_team, required)
             else:
-                self._play_support(controller, bid, b_map_team, required)
+                self._play_support(controller, bid, map_team, required)
 
     # ----------------------------
     # Role behaviors
@@ -878,20 +781,36 @@ class BotPlayer:
         bx, by = bot_state["x"], bot_state["y"]
 
         ws = self.workstations[map_team]
-        prep_counter = self._find_empty_counter_near(controller, map_team, ws.get("prep_counter")) or ws.get("prep_counter")
+        prep_counter = self._find_empty_counter_near(controller, map_team, ws.get("prep_counter"), origin=(bx, by))
+        if prep_counter is None and self._is_reachable_adjacent(controller, map_team, (bx, by), ws.get("prep_counter")):
+            prep_counter = ws.get("prep_counter")
         plate_counter = ws.get("plate_counter")
-        cooker_pos = ws.get("cooker")
+        cookers = self.tile_cache.get(map_team, {}).get("COOKER", [])
+        cooker_pos = self._find_nearest((bx, by), cookers) if cookers else ws.get("cooker")
         shop_pos = ws.get("shop")
         trash_pos = ws.get("trash")
         sink_pos = ws.get("sink")
         missing = self._missing_for_plate(required, self._plate_at_counter_or_bot(controller, map_team))
-        single_counter = prep_counter and plate_counter and prep_counter == plate_counter
+        reachable_counters = self._reachable_counters(controller, map_team, (bx, by))
+        single_counter = len(reachable_counters) <= 1
         pan_food = None
-        if cooker_pos:
-            tile = controller.get_tile(map_team, cooker_pos[0], cooker_pos[1])
-            pan = getattr(tile, "item", None) if tile else None
-            if isinstance(pan, Pan) and isinstance(getattr(pan, "food", None), Food):
-                pan_food = pan.food
+        if cookers:
+            nearest_with_food = None
+            nearest_dist = 10**9
+            for pos in cookers:
+                tile = controller.get_tile(map_team, pos[0], pos[1])
+                pan = getattr(tile, "item", None) if tile else None
+                if isinstance(pan, Pan) and isinstance(getattr(pan, "food", None), Food):
+                    dist = self._chebyshev((bx, by), pos)
+                    if dist < nearest_dist:
+                        nearest_dist = dist
+                        nearest_with_food = pos
+            if nearest_with_food:
+                tile = controller.get_tile(map_team, nearest_with_food[0], nearest_with_food[1])
+                pan = getattr(tile, "item", None) if tile else None
+                if isinstance(pan, Pan) and isinstance(getattr(pan, "food", None), Food):
+                    pan_food = pan.food
+                cooker_pos = nearest_with_food
 
         # If holding a dirty plate (e.g. picked up by mistake), put it in the sink
         if holding and holding.get("type") == "Plate" and holding.get("dirty"):
@@ -978,7 +897,7 @@ class BotPlayer:
                                 controller.place(bot_id, prep_counter[0], prep_counter[1])
                                 return
                         # Counter not empty - find another empty counter
-                        empty_counter = self._find_empty_counter_near(controller, map_team, prep_counter)
+                        empty_counter = self._find_empty_counter_near(controller, map_team, prep_counter, origin=(bx, by))
                         if empty_counter and empty_counter != prep_counter:
                             if self._move_towards(controller, bot_id, map_team, empty_counter):
                                 controller.place(bot_id, empty_counter[0], empty_counter[1])
@@ -1006,21 +925,19 @@ class BotPlayer:
                         controller.place(bot_id, cooker_pos[0], cooker_pos[1])
                 return
             # ready food: place on an empty counter (so plate bot can pick up; don't overwrite plate)
-            empty_for_food = self._find_empty_counter_near(controller, map_team, plate_counter) or plate_counter
+            empty_for_food = self._find_empty_counter_near(controller, map_team, plate_counter, origin=(bx, by))
             if empty_for_food:
                 tile = controller.get_tile(map_team, empty_for_food[0], empty_for_food[1])
                 if tile is not None and getattr(tile, "item", None) is None:
                     if self._move_towards(controller, bot_id, map_team, empty_for_food):
                         controller.place(bot_id, empty_for_food[0], empty_for_food[1])
                         return
-            # If no empty counter, store in a box to avoid getting stuck holding cooked food
-            box_pos = self._find_box_for_store(controller, map_team, ft)
-            if box_pos and self._move_towards(controller, bot_id, map_team, box_pos):
-                controller.place(bot_id, box_pos[0], box_pos[1])
-                return
-            # Otherwise wait near plate counter
-            if plate_counter:
-                self._move_towards(controller, bot_id, map_team, plate_counter)
+            # fallback: place into matching box if no reachable counter
+            ft = FOOD_BY_NAME.get(holding.get("food_name"))
+            if ft is not None:
+                box_pos = self._find_box_for_store(controller, map_team, ft)
+                if box_pos and self._move_towards(controller, bot_id, map_team, box_pos):
+                    controller.place(bot_id, box_pos[0], box_pos[1])
             return
 
         # no holding
@@ -1135,6 +1052,7 @@ class BotPlayer:
         sinktable_pos = ws.get("sinktable")
         sink_pos = ws.get("sink")
         missing = self._missing_for_plate(required, self._plate_at_counter_or_bot(controller, map_team))
+        cookers = self.tile_cache.get(map_team, {}).get("COOKER", [])
 
         # If holding a dirty plate, put it in the sink first
         if holding and holding.get("type") == "Plate" and holding.get("dirty"):
@@ -1146,18 +1064,24 @@ class BotPlayer:
         if plate_counter:
             tile = controller.get_tile(map_team, plate_counter[0], plate_counter[1])
             if tile is not None and getattr(tile, "item", None) is not None and not isinstance(tile.item, Plate):
-                new_counter = self._find_empty_counter_near(controller, map_team, ws.get("submit"))
+                new_counter = self._find_empty_counter_near(controller, map_team, ws.get("submit"), origin=(bot_state["x"], bot_state["y"]))
                 if new_counter is not None:
                     ws["plate_counter"] = new_counter
                     plate_counter = new_counter
 
         prep_counter_ref = ws.get("prep_counter")
-        single_counter = prep_counter_ref and plate_counter and prep_counter_ref == plate_counter
+        reachable_counters = self._reachable_counters(controller, map_team, (bot_state["x"], bot_state["y"]))
+        single_counter = len(reachable_counters) <= 1
 
         # if holding a plate, try submit when complete or add food from counters
         if holding and holding.get("type") == "Plate":
             missing = self._missing_for_plate(required, holding)
             if not missing and submit_pos:
+                if not self._plate_exact_match(holding, required):
+                    trash_pos = ws.get("trash")
+                    if trash_pos and self._move_towards(controller, bot_id, map_team, trash_pos):
+                        controller.trash(bot_id, trash_pos[0], trash_pos[1])
+                    return
                 if self._move_towards(controller, bot_id, map_team, submit_pos):
                     controller.submit(bot_id, submit_pos[0], submit_pos[1])
                 return
@@ -1168,7 +1092,9 @@ class BotPlayer:
                         controller.add_food_to_plate(bot_id, pos[0], pos[1])
                         return
             if not single_counter:
-                empty_counter = self._find_empty_counter_near(controller, map_team, ws.get("submit")) or plate_counter
+                empty_counter = self._find_empty_counter_near(controller, map_team, ws.get("submit"), origin=(bot_state["x"], bot_state["y"]))
+                if empty_counter is None and self._is_reachable_adjacent(controller, map_team, (bot_state["x"], bot_state["y"]), plate_counter):
+                    empty_counter = plate_counter
                 if empty_counter:
                     tile = controller.get_tile(map_team, empty_counter[0], empty_counter[1])
                     if tile is not None and getattr(tile, "item", None) is None:
@@ -1178,14 +1104,16 @@ class BotPlayer:
                                 ws["plate_counter"] = empty_counter
             return
 
-        # ensure we have a plate (in hand or on counter); on single-counter maps keep plate in hand
+        # ensure we have a plate (in hand or on counter); keep in hand if counter is not reachable
         if plate_counter:
             tile = controller.get_tile(map_team, plate_counter[0], plate_counter[1])
             tile_item = getattr(tile, "item", None) if tile else None
             if tile is None or not isinstance(tile_item, Plate):
                 # place plate on counter only when we have two counters (so cook can use the other)
                 if holding and holding.get("type") == "Plate" and not single_counter:
-                    place_counter = self._find_empty_counter_near(controller, map_team, ws.get("submit")) or plate_counter
+                    place_counter = self._find_empty_counter_near(controller, map_team, ws.get("submit"), origin=(bot_state["x"], bot_state["y"]))
+                    if place_counter is None and self._is_reachable_adjacent(controller, map_team, (bot_state["x"], bot_state["y"]), plate_counter):
+                        place_counter = plate_counter
                     if place_counter:
                         ptile = controller.get_tile(map_team, place_counter[0], place_counter[1])
                         if ptile is not None and getattr(ptile, "item", None) is None:
@@ -1194,7 +1122,7 @@ class BotPlayer:
                                 if place_counter != plate_counter:
                                     ws["plate_counter"] = place_counter
                     return
-                # otherwise acquire a plate (keep in hand on single-counter so we can add from counters)
+                # otherwise acquire a plate (keep in hand if counter is unreachable)
                 if holding is None:
                     # prefer sinktable if it has plates (from washing)
                     if sinktable_pos:
@@ -1216,15 +1144,46 @@ class BotPlayer:
             if shop_simple and self._shop_for_items(controller, bot_id, map_team, shop_simple):
                 return
 
+        # Help cook if there are cookable items missing and an empty cooker exists
+        if holding is None and missing:
+            empty_cooker = None
+            best_dist = 10**9
+            for pos in cookers:
+                tile = controller.get_tile(map_team, pos[0], pos[1])
+                pan = getattr(tile, "item", None) if tile else None
+                if isinstance(pan, Pan) and pan.food is None:
+                    dist = self._chebyshev((bot_state["x"], bot_state["y"]), pos)
+                    if dist < best_dist:
+                        best_dist = dist
+                        empty_cooker = pos
+            if empty_cooker:
+                for ft in missing:
+                    if ft.can_cook:
+                        pos = self._find_ready_food_on_counters(controller, map_team, ft)
+                        if pos and self._move_towards(controller, bot_id, map_team, pos):
+                            controller.pickup(bot_id, pos[0], pos[1])
+                            return
+                        box_pos = self._find_box_with_food_type(controller, map_team, ft, empty_cooker)
+                        if box_pos and self._move_towards(controller, bot_id, map_team, box_pos):
+                            controller.pickup(bot_id, box_pos[0], box_pos[1])
+                            return
+
         # check plate on counter for completion (only if we're not already holding a plate)
         if not (holding and holding.get("type") == "Plate"):
             plate_obj = self._plate_at_counter_or_bot(controller, map_team)
             if plate_obj is not None:
                 missing = self._missing_for_plate(required, plate_obj)
                 if not missing:
+                    if not self._plate_exact_match(plate_obj, required):
+                        if isinstance(plate_obj, Plate) and plate_counter:
+                            trash_pos = ws.get("trash")
+                            if trash_pos and self._move_towards(controller, bot_id, map_team, plate_counter):
+                                controller.pickup(bot_id, plate_counter[0], plate_counter[1])
+                                if self._move_towards(controller, bot_id, map_team, trash_pos):
+                                    controller.trash(bot_id, trash_pos[0], trash_pos[1])
+                        return
                     # Plate is complete - pick it up if on counter (will submit next turn)
                     if isinstance(plate_obj, Plate) and plate_counter:
-                        # Plate is on counter, pick it up
                         if self._move_towards(controller, bot_id, map_team, plate_counter):
                             controller.pickup(bot_id, plate_counter[0], plate_counter[1])
                     return
@@ -1257,7 +1216,9 @@ class BotPlayer:
                         controller.add_food_to_plate(bot_id, plate_counter[0], plate_counter[1])
                     return
             # No plate available - place food on counter for later
-            empty_counter = self._find_empty_counter_near(controller, map_team, plate_counter) or plate_counter
+            empty_counter = self._find_empty_counter_near(controller, map_team, plate_counter, origin=(bot_state["x"], bot_state["y"]))
+            if empty_counter is None and self._is_reachable_adjacent(controller, map_team, (bot_state["x"], bot_state["y"]), plate_counter):
+                empty_counter = plate_counter
             if empty_counter:
                 tile = controller.get_tile(map_team, empty_counter[0], empty_counter[1])
                 if tile is not None and getattr(tile, "item", None) is None:
@@ -1265,8 +1226,9 @@ class BotPlayer:
                         controller.place(bot_id, empty_counter[0], empty_counter[1])
             return
 
-        # fetch next missing ingredient (skip when single_counter — we only add from counters with plate in hand)
-        if missing and not single_counter:
+        # fetch next missing ingredient (also when plate counter unreachable)
+        plate_unreachable = not self._is_reachable_adjacent(controller, map_team, (bot_state["x"], bot_state["y"]), plate_counter)
+        if missing and (not single_counter or plate_unreachable):
             # prefer ready food on counters
             for ft in missing:
                 pos = self._find_ready_food_on_counters(controller, map_team, ft)
@@ -1363,7 +1325,9 @@ class BotPlayer:
         holding = bot_state.get("holding")
 
         ws = self.workstations[map_team]
-        prep_counter = self._find_empty_counter_near(controller, map_team, ws.get("prep_counter")) or ws.get("prep_counter")
+        prep_counter = self._find_empty_counter_near(controller, map_team, ws.get("prep_counter"), origin=(bot_state["x"], bot_state["y"]))
+        if prep_counter is None and self._is_reachable_adjacent(controller, map_team, (bot_state["x"], bot_state["y"]), ws.get("prep_counter")):
+            prep_counter = ws.get("prep_counter")
         shop_pos = ws.get("shop")
         sink_pos = ws.get("sink")
 
@@ -1442,31 +1406,3 @@ class BotPlayer:
             if holding and holding.get("type") == "Plate":
                 return holding
         return None
-
-    def _should_switch_for_sabotage(self, controller: RobotController) -> bool:
-        info = controller.get_switch_info()
-        if not info.get("window_active") or info.get("my_team_switched"):
-            return False
-        own_team = controller.get_team()
-        enemy_team = controller.get_enemy_team()
-        own_money = controller.get_team_money(own_team)
-        enemy_money = controller.get_team_money(enemy_team)
-        lead = own_money - enemy_money
-
-        turn = controller.get_turn()
-        remaining_enemy_reward = 0
-        for o in controller.get_orders(enemy_team):
-            if o.get("completed_turn") is None and o.get("expires_turn", 0) >= turn:
-                remaining_enemy_reward += o.get("reward", 0)
-
-        if remaining_enemy_reward >= 40000:
-            return True
-
-        turns_left = info.get("window_end_turn", turn) - turn
-        if turns_left <= 20:
-            lead_threshold = max(-1000, int(0.2 * remaining_enemy_reward))
-        else:
-            lead_threshold = max(-2000, int(0.3 * remaining_enemy_reward))
-        if remaining_enemy_reward >= 30000:
-            lead_threshold -= 2000
-        return lead >= lead_threshold
