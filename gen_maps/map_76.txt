@@ -1,0 +1,42 @@
+###########
+#..#K#....#
+#..#...TC.#
+##.....b.C#
+#.T.#.K...#
+#...#.#..##
+#..$...#..#
+#.B#.C....#
+#....b....#
+#..R#.S#.##
+#..UT.#...#
+#S#......##
+###########
+
+SWITCH: turn=250 duration=100
+
+ORDERS:
+start=2	duration=117	required=MEAT	reward=35000	penalty=90
+start=6	duration=93	required=SAUCE,EGG,MEAT	reward=64000	penalty=170
+start=21	duration=46	required=NOODLES,ONIONS	reward=1000	penalty=0
+start=24	duration=138	required=NOODLES,ONIONS,EGG,MEAT	reward=23000	penalty=120
+start=29	duration=168	required=MEAT,SAUCE,ONIONS,EGG,NOODLES	reward=13000	penalty=20
+start=46	duration=217	required=SAUCE,NOODLES,MEAT,ONIONS	reward=10000	penalty=10
+start=67	duration=10	required=NOODLES,ONIONS,SAUCE	reward=75000	penalty=250
+start=77	duration=58	required=SAUCE,NOODLES,MEAT	reward=43000	penalty=190
+start=84	duration=122	required=MEAT,SAUCE,ONIONS,EGG,NOODLES	reward=40000	penalty=340
+start=87	duration=166	required=ONIONS,EGG	reward=82000	penalty=200
+start=118	duration=140	required=MEAT	reward=78000	penalty=140
+start=187	duration=30	required=SAUCE,NOODLES,EGG	reward=84000	penalty=480
+start=227	duration=165	required=EGG,SAUCE	reward=53000	penalty=410
+start=233	duration=70	required=ONIONS	reward=65000	penalty=350
+start=245	duration=132	required=EGG,MEAT,ONIONS	reward=72000	penalty=180
+start=250	duration=47	required=NOODLES,SAUCE,MEAT,ONIONS	reward=94000	penalty=450
+start=297	duration=96	required=MEAT,ONIONS,EGG	reward=47000	penalty=410
+start=333	duration=41	required=NOODLES,ONIONS,EGG,MEAT,SAUCE	reward=23000	penalty=40
+start=340	duration=165	required=MEAT,NOODLES,EGG,SAUCE	reward=41000	penalty=220
+start=344	duration=48	required=MEAT,SAUCE	reward=36000	penalty=310
+start=378	duration=125	required=SAUCE,MEAT,EGG	reward=2000	penalty=10
+start=385	duration=17	required=EGG	reward=93000	penalty=910
+start=407	duration=112	required=ONIONS,NOODLES	reward=10000	penalty=80
+start=419	duration=231	required=SAUCE,MEAT,ONIONS	reward=23000	penalty=10
+start=425	duration=72	required=NOODLES,SAUCE,ONIONS	reward=34000	penalty=200

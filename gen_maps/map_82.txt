@@ -1,0 +1,42 @@
+#####################
+#.T#K#.............##
+#.....#..........#..#
+#.#.##..b........U..#
+#.........#.#.K$...##
+#C.S..#.#..S..RC.T###
+#T#........#.#......#
+#........C##.##.....#
+#........C.......#..#
+#.#..R..##..##....#.#
+#..R..#.....#...C#.##
+#.#.##...#.C.#......#
+#.b.#..#..B..#.#...##
+#.......K....##.....#
+#####################
+
+SWITCH: turn=250 duration=100
+
+ORDERS:
+start=54	duration=145	required=MEAT,NOODLES,ONIONS	reward=8000	penalty=40
+start=60	duration=22	required=MEAT	reward=6000	penalty=20
+start=80	duration=110	required=EGG,ONIONS	reward=83000	penalty=190
+start=88	duration=65	required=MEAT,NOODLES,EGG,SAUCE,ONIONS	reward=79000	penalty=80
+start=161	duration=24	required=ONIONS,SAUCE	reward=60000	penalty=320
+start=199	duration=130	required=ONIONS,NOODLES	reward=30000	penalty=200
+start=202	duration=98	required=ONIONS,SAUCE,EGG,MEAT,NOODLES	reward=0	penalty=0
+start=228	duration=156	required=ONIONS	reward=77000	penalty=180
+start=240	duration=134	required=SAUCE,MEAT,NOODLES,EGG	reward=91000	penalty=370
+start=279	duration=74	required=NOODLES,EGG,MEAT,SAUCE	reward=57000	penalty=310
+start=304	duration=167	required=EGG,NOODLES	reward=1000	penalty=0
+start=314	duration=129	required=ONIONS,MEAT,NOODLES,EGG	reward=24000	penalty=210
+start=315	duration=37	required=SAUCE,EGG,MEAT,NOODLES,ONIONS	reward=62000	penalty=240
+start=327	duration=75	required=EGG	reward=47000	penalty=190
+start=350	duration=151	required=MEAT,SAUCE,NOODLES	reward=23000	penalty=70
+start=376	duration=115	required=EGG	reward=90000	penalty=320
+start=410	duration=179	required=NOODLES,ONIONS,SAUCE	reward=13000	penalty=100
+start=419	duration=6	required=ONIONS,SAUCE,EGG,MEAT	reward=79000	penalty=230
+start=477	duration=134	required=MEAT,ONIONS,EGG,SAUCE,NOODLES	reward=44000	penalty=110
+start=542	duration=180	required=SAUCE,MEAT,ONIONS	reward=97000	penalty=620
+start=581	duration=106	required=MEAT	reward=91000	penalty=240
+start=582	duration=167	required=MEAT,NOODLES	reward=12000	penalty=90
+start=584	duration=13	required=SAUCE,NOODLES,ONIONS,EGG,MEAT	reward=92000	penalty=600
